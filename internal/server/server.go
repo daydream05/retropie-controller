@@ -157,15 +157,18 @@ func (s *Server) Shutdown(_ context.Context) error {
 func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 	tokenValue := strings.TrimPrefix(r.URL.Path, "/join/")
 	if tokenValue == "" {
+		s.logger.Printf("join page missing token from %s", r.RemoteAddr)
 		http.NotFound(w, r)
 		return
 	}
 
 	if _, err := s.tokenManager.Validate(tokenValue); err != nil {
+		s.logger.Printf("join page invalid token from %s: %v", r.RemoteAddr, err)
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return
 	}
 
+	s.logger.Printf("join page served to %s", r.RemoteAddr)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(s.controllerHTML))
 }
@@ -173,39 +176,49 @@ func (s *Server) handleJoinPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.logger.Printf("websocket upgrade failed for %s: %v", r.RemoteAddr, err)
 		return
 	}
+	s.logger.Printf("websocket upgraded for %s", r.RemoteAddr)
 
 	clientIP, err := clientIPFromRequest(r)
 	if err != nil {
+		s.logger.Printf("websocket client IP parse failed for %s: %v", r.RemoteAddr, err)
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "invalid_token"})
 		_ = conn.Close()
 		return
 	}
+	s.logger.Printf("websocket client IP %s from remote %s", clientIP.String(), r.RemoteAddr)
 
 	conn.SetReadLimit(2048)
 	_ = conn.SetReadDeadline(time.Now().Add(s.heartbeatTimeout))
 
 	var joinRequest clientMessage
 	if err := conn.ReadJSON(&joinRequest); err != nil {
+		s.logger.Printf("websocket read join failed for %s: %v", clientIP.String(), err)
 		_ = conn.Close()
 		return
 	}
 
 	if joinRequest.Type != "join" {
+		s.logger.Printf("websocket invalid first message from %s: %s", clientIP.String(), joinRequest.String())
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "invalid_token"})
 		_ = conn.Close()
 		return
 	}
 
 	if !s.limiter.Allow(clientIP.String(), time.Now()) {
+		s.logger.Printf("websocket join rate limited for %s", clientIP.String())
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "invalid_token"})
 		_ = conn.Close()
 		return
 	}
 
 	claims, err := s.tokenManager.Validate(joinRequest.Token)
-	if err != nil || claims.SubnetPrefix != subnetPrefix(s.serverIP) || subnetPrefix(clientIP) != subnetPrefix(s.serverIP) {
+	clientSubnet := subnetPrefix(clientIP)
+	serverSubnet := subnetPrefix(s.serverIP)
+	if err != nil || claims.SubnetPrefix != serverSubnet || (clientIP.To4() != nil && clientSubnet != serverSubnet) {
+		s.logger.Printf("websocket join rejected for %s: validate_err=%v token_subnet=%q server_subnet=%q client_subnet=%q", clientIP.String(), err, claims.SubnetPrefix, serverSubnet, clientSubnet)
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "invalid_token"})
 		_ = conn.Close()
 		return
@@ -213,16 +226,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	player, ok := s.assignPlayer()
 	if !ok {
+		s.logger.Printf("websocket join rejected for %s: server full", clientIP.String())
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "server_full"})
 		_ = conn.Close()
 		return
 	}
+	s.logger.Printf("websocket join accepted for %s as player %d", clientIP.String(), player)
 
 	defer func() {
 		if err := s.gamepads.ReleaseAll(player); err != nil {
 			s.logger.Printf("release player %d: %v", player, err)
 		}
 		s.freePlayer(player)
+		s.logger.Printf("websocket disconnected for %s player %d", clientIP.String(), player)
 		_ = conn.Close()
 	}()
 

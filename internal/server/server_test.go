@@ -108,6 +108,60 @@ func TestWebSocketJoinAssignsPlayer(t *testing.T) {
 	}
 }
 
+func TestWebSocketJoinAcceptsIPv6ClientWhenTokenIsValid(t *testing.T) {
+	t.Parallel()
+
+	tokenManager := token.NewManager([]byte("0123456789abcdef"))
+	joinToken, err := tokenManager.Generate("192.168")
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	gamepads := &fakeGamepads{count: 8}
+	srv, err := New(Config{
+		TokenManager:     tokenManager,
+		Gamepads:         gamepads,
+		ControllerHTML:   "<!doctype html>",
+		ServerIP:         net.ParseIP("192.168.1.50"),
+		MaxPlayers:       8,
+		HeartbeatTimeout: 500 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws"
+	dialer := websocket.Dialer{}
+	headers := http.Header{}
+	headers.Set("X-Forwarded-For", "2600:4041:5b6a:8500:1102:88f3:55be:ff9a")
+
+	conn, _, err := dialer.Dial(wsURL, headers)
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{
+		"type":  "join",
+		"token": joinToken,
+	}); err != nil {
+		t.Fatalf("WriteJSON(join) error = %v", err)
+	}
+
+	var response map[string]any
+	if err := conn.ReadJSON(&response); err != nil {
+		t.Fatalf("ReadJSON() error = %v", err)
+	}
+
+	if response["type"] != "joined" {
+		raw, _ := json.Marshal(response)
+		t.Fatalf("response = %s, want joined", raw)
+	}
+}
+
 type fakeGamepads struct {
 	count        int
 	releaseCalls int

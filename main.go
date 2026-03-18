@@ -77,9 +77,10 @@ func main() {
 		logger.Fatalf("start HTTP server: %v", err)
 	}
 
-	joinURL := fmt.Sprintf("http://%s/join/%s", serverIP.String(), sessionToken)
+	joinHost := controllerHost(os.Getenv("RETROPIE_CONTROLLER_PUBLIC_HOST"), currentHostname(), serverIP)
+	joinURL := fmt.Sprintf("http://%s/join/%s", joinHost, sessionToken)
 	if port != defaultPort {
-		joinURL = fmt.Sprintf("http://%s:%d/join/%s", serverIP.String(), port, sessionToken)
+		joinURL = fmt.Sprintf("http://%s:%d/join/%s", joinHost, port, sessionToken)
 	}
 
 	if err := qrcode.WriteFile(joinURL, qrcode.Medium, 256, "/tmp/controller-qr.png"); err != nil {
@@ -214,4 +215,27 @@ func subnetPrefix(ip net.IP) string {
 		return ""
 	}
 	return fmt.Sprintf("%d.%d", ip4[0], ip4[1])
+}
+
+func currentHostname() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return hostname
+}
+
+func controllerHost(configuredHost string, hostname string, serverIP net.IP) string {
+	if configuredHost != "" {
+		return configuredHost
+	}
+
+	if hostname != "" {
+		if strings.Contains(hostname, ".") {
+			return hostname
+		}
+		return hostname + ".local"
+	}
+
+	return serverIP.String()
 }

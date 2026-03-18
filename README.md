@@ -63,6 +63,11 @@ The installer auto-detects RetroPie and puts autoconfig files in:
 Same steps — the installer auto-detects standalone RetroArch and puts autoconfig files in:
 `~/.config/retroarch/autoconfig/`
 
+The installer also writes a managed BrowserPad reservation block to your
+RetroArch config so `BrowserPad 1` through `BrowserPad 8` stay assigned to
+players 1 through 8, even on systems where RetroArch discovers `/dev/input`
+devices out of order. It also enables menu control from any connected player.
+
 ### Input group (required for uinput)
 
 ```bash
@@ -96,6 +101,9 @@ sudo systemctl status retropie-controller
 - Assignment is first-come, first-served
 - Disconnecting frees the slot immediately
 - All 8 virtual controllers are created at startup — RetroArch sees them as always-present gamepads
+- The installer reserves `BrowserPad 1` through `BrowserPad 8` to matching
+  RetroArch player slots to avoid player order drift when Linux event devices
+  cross `event9`/`event10`
 
 ## Controller Layout
 
@@ -131,6 +139,11 @@ sudo systemctl status retropie-controller
 - Confirm autoconfig files exist: `ls ~/.config/retroarch/autoconfig/BrowserPad*`
 - Restart RetroArch after install
 - Check devices exist: `cat /proc/bus/input/devices | grep BrowserPad`
+
+**Player 1 controls the wrong port in RetroArch**
+- Re-run `./setup/install.sh` to refresh the managed BrowserPad reservation block
+- Check your RetroArch config contains the block markers:
+  `retropie-controller BrowserPad reservations`
 
 **Works in RetroPie menus but not in games**
 - Some cores need controllers configured per-core in RetroArch settings
