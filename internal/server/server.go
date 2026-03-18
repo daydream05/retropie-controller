@@ -215,8 +215,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, err := s.tokenManager.Validate(joinRequest.Token)
-	if err != nil || claims.SubnetPrefix != subnetPrefix(s.serverIP) || subnetPrefix(clientIP) != subnetPrefix(s.serverIP) {
-		s.logger.Printf("websocket join rejected for %s: validate_err=%v token_subnet=%q server_subnet=%q client_subnet=%q", clientIP.String(), err, claims.SubnetPrefix, subnetPrefix(s.serverIP), subnetPrefix(clientIP))
+	clientSubnet := subnetPrefix(clientIP)
+	serverSubnet := subnetPrefix(s.serverIP)
+	if err != nil || claims.SubnetPrefix != serverSubnet || (clientIP.To4() != nil && clientSubnet != serverSubnet) {
+		s.logger.Printf("websocket join rejected for %s: validate_err=%v token_subnet=%q server_subnet=%q client_subnet=%q", clientIP.String(), err, claims.SubnetPrefix, serverSubnet, clientSubnet)
 		_ = s.writeMessage(conn, serverMessage{Type: "error", Message: "invalid_token"})
 		_ = conn.Close()
 		return
