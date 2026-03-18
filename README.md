@@ -1,146 +1,157 @@
 # retropie-controller
 
-`retropie-controller` turns a phone browser into a RetroPie controller. A Raspberry Pi running RetroPie boots the Go binary, prints a QR code, and exposes up to 8 simultaneous browser-backed gamepads as Linux virtual input devices.
+Turn any phone browser into a game controller — no app install needed. Scan a QR code, open Safari (or any browser), and your phone becomes a gamepad. Supports up to 8 simultaneous players.
+
+Works with **RetroPie** and **standalone RetroArch** on any Linux machine (Raspberry Pi, desktop, mini PC, etc.).
+
+## How It Works
+
+1. Run the binary on your Linux machine
+2. It prints a QR code in the terminal and generates `/tmp/controller-qr.png`
+3. Players scan the QR → browser opens → instant controller UI
+4. Each phone gets assigned a player slot (P1–P8)
+5. Inputs flow over WebSocket → Linux virtual gamepad (uinput) → RetroArch reads it like a real controller
 
 ## Features
 
-- Single Go binary with no Node.js or npm dependency
-- HTTP controller page plus WebSocket input channel
-- HMAC-signed join token
-- LAN subnet check and in-memory join rate limiting
-- 8 pre-created virtual gamepads named `BrowserPad 1` through `BrowserPad 8`
-- QR code output both as `/tmp/controller-qr.png` and terminal ASCII
-- Graceful cleanup on disconnect, heartbeat timeout, and shutdown
-- macOS-safe build path with non-Linux gamepad stubs
+- Single Go binary — no Node.js, no npm, no runtime dependencies
+- Up to 8 simultaneous players
+- HMAC-signed join tokens baked into the QR (secure, no guessable codes)
+- LAN-only: subnet check enforces same-network requirement
+- Full-screen controller UI: D-pad, A/B/X/Y, LB/RB, Start/Select
+- iOS Safari compatible (Pointer Events, no scroll/zoom, pagehide cleanup)
+- Heartbeat timeout: stuck buttons auto-release if phone disconnects
+- macOS build support for local development (uinput stubbed out)
 
 ## Requirements
 
-- Raspberry Pi running RetroPie on Linux
-- `/dev/uinput` available and writable
-- Go 1.22+ for local development
-- `pi` user in the `input` group:
-
-```bash
-sudo usermod -a -G input pi
-```
-
-## Project Layout
-
-```text
-retropie-controller/
-├── go.mod
-├── go.sum
-├── main.go
-├── internal/
-│   ├── gamepad/
-│   │   ├── manager.go
-│   │   ├── manager_linux.go
-│   │   └── manager_stub.go
-│   ├── server/
-│   │   ├── server.go
-│   │   └── server_test.go
-│   └── token/
-│       ├── token.go
-│       └── token_test.go
-├── public/
-│   └── controller.html
-├── setup/
-│   ├── install.sh
-│   ├── retropie-controller.service
-│   └── retroarch-autoconfig/
-│       └── BrowserPad.cfg
-└── Makefile
-```
+- Linux with `/dev/uinput` (Raspberry Pi, Ubuntu, Debian, etc.)
+- RetroArch — RetroPie or standalone
+- Go 1.22+ (only for building)
+- Your user in the `input` group (see below)
 
 ## Build
 
-Build for the current machine:
-
 ```bash
+# Build for current machine
 make build
-```
 
-Cross-compile for Raspberry Pi (32-bit ARMv7):
-
-```bash
+# Cross-compile for Raspberry Pi (32-bit ARMv7)
 make build-pi
-```
+# → produces retropie-controller-arm
 
-That produces `retropie-controller-arm` using:
-
-```bash
-GOOS=linux GOARCH=arm GOARM=7 go build -o retropie-controller-arm .
-```
-
-Run locally:
-
-```bash
+# Run locally (macOS/Linux dev)
 make run
 ```
 
-## Install on RetroPie
+## Install
 
-1. Build the Pi binary with `make build-pi`.
-2. Copy the repository to `/home/pi/retropie-controller` on the Pi.
-3. Run the installer:
+### RetroPie
 
 ```bash
+make build-pi
+# Copy repo to Pi, then on the Pi:
 chmod +x setup/install.sh
 ./setup/install.sh
 ```
 
-4. Reboot or restart RetroArch if autoconfig files were not picked up immediately.
+The installer auto-detects RetroPie and puts autoconfig files in:
+`/opt/retropie/configs/all/retroarch/autoconfig/`
 
-The installer:
+### Standalone RetroArch (any Linux)
 
-- copies `retropie-controller-arm` into `/home/pi/retropie-controller`
-- installs the systemd service
-- generates RetroArch autoconfig files for `BrowserPad 1` through `BrowserPad 8`
+Same steps — the installer auto-detects standalone RetroArch and puts autoconfig files in:
+`~/.config/retroarch/autoconfig/`
+
+### Input group (required for uinput)
+
+```bash
+sudo usermod -a -G input $USER
+# Log out and back in, or reboot
+```
+
+### Systemd service (auto-start on boot)
+
+The installer sets this up automatically. To manage manually:
+
+```bash
+sudo systemctl start retropie-controller
+sudo systemctl stop retropie-controller
+sudo systemctl status retropie-controller
+```
 
 ## Usage
 
-1. Start the service or run the binary manually.
-2. The binary detects a LAN IP and starts HTTP on port `80`, falling back to `3000` when it cannot bind privileged port `80`.
-3. Scan the QR code printed in the terminal or open the generated `/tmp/controller-qr.png`.
-4. Each phone joins the same session URL and is assigned the next free player slot.
+1. Start the service (or run `./retropie-controller-arm` manually)
+2. It logs the controller URL and prints a QR code to the terminal
+3. Scan the QR with your phone — Safari opens the controller page
+4. Multiple players scan the same QR — each gets their own slot
+5. Start a game in RetroArch — BrowserPad controllers are auto-detected
 
-The browser UI uses full-state input messages, 100ms heartbeats, and automatically releases all buttons on disconnect or missed heartbeats.
+**Port:** binds to `80` by default, falls back to `3000` if not root. The QR URL reflects whichever port is active.
 
 ## Multiplayer
 
-- Up to 8 players can connect at once
-- Player slots are assigned in connection order
-- Disconnects immediately free the slot for the next phone
-- All 8 virtual controllers are created when the process starts
+- Each phone that scans = one player slot (P1, P2, ... up to P8)
+- Assignment is first-come, first-served
+- Disconnecting frees the slot immediately
+- All 8 virtual controllers are created at startup — RetroArch sees them as always-present gamepads
 
-## Security Notes
+## Controller Layout
 
-- Session join tokens are HMAC-SHA256 signed and generated at process start
-- WebSocket joins are rejected if the client is not on the same `/16` subnet as the Pi
-- Join attempts are rate-limited to 10 per IP per minute
+```
+[LB]                        [RB]
+         [ Player N ]
+
+   [↑]                  [Y]
+[←]   [→]           [X]   [B]
+   [↓]                  [A]
+
+        [Select] [Start]
+```
+
+## Security
+
+- Join tokens are HMAC-SHA256 signed, generated fresh at each startup
+- Tokens expire after 24 hours
+- WebSocket joins rejected if client is not on the same `/16` subnet
+- Rate limited: max 10 join attempts per IP per minute
 
 ## Troubleshooting
 
-`permission denied` opening `/dev/uinput`:
+**`permission denied` on `/dev/uinput`**
+- Make sure your user is in the `input` group and you've logged out/in
 
-- confirm the `input` group membership for `pi`
-- confirm `/dev/uinput` exists and the udev permissions allow group write access
+**Phone loads the page but can't join**
+- Confirm phone and Pi are on the same WiFi network
+- Check the URL in the QR matches the Pi's actual LAN IP
+- If port 80 is unavailable, the fallback URL (`:3000`) is shown in logs
 
-Phones can load the page but never join:
+**RetroArch doesn't recognize the controllers**
+- Confirm autoconfig files exist: `ls ~/.config/retroarch/autoconfig/BrowserPad*`
+- Restart RetroArch after install
+- Check devices exist: `cat /proc/bus/input/devices | grep BrowserPad`
 
-- confirm they are on the same LAN as the Pi
-- confirm the Pi’s chosen IP is reachable from the phone
-- if port `80` is unavailable, use the fallback `:3000` URL shown in the logs
+**Works in RetroPie menus but not in games**
+- Some cores need controllers configured per-core in RetroArch settings
+- Go to: Settings → Input → Port 1 Controls → Set to BrowserPad 1
 
-RetroArch does not recognize the controllers:
+## Project Layout
 
-- confirm the generated files exist under `/opt/retropie/configs/all/retroarch/autoconfig`
-- restart RetroArch after installing the configs
-- inspect `evtest` or `/proc/bus/input/devices` to verify `BrowserPad N` devices were created
-
-## Development Notes
-
-- Linux uses `github.com/bendahl/uinput` for virtual gamepads
-- WebSockets are handled with `github.com/gorilla/websocket`
-- QR code generation uses `github.com/skip2/go-qrcode`
-- Non-Linux builds use a no-op stub so the project still builds cleanly on macOS for the HTTP, token, and UI layers
+```
+retropie-controller/
+├── main.go
+├── go.mod / go.sum
+├── internal/
+│   ├── gamepad/        # uinput virtual gamepad (Linux) + stub (macOS)
+│   ├── server/         # HTTP + WebSocket handler
+│   └── token/          # HMAC token gen/validation
+├── public/
+│   └── controller.html # Phone controller UI
+├── setup/
+│   ├── install.sh                    # Auto-detects RetroPie vs standalone
+│   ├── retropie-controller.service   # systemd unit
+│   └── retroarch-autoconfig/
+│       └── BrowserPad.cfg            # RetroArch button mapping template
+└── Makefile
+```
