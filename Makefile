@@ -1,6 +1,6 @@
 APP := retropie-controller
 
-.PHONY: build build-pi run
+.PHONY: build build-pi run test
 
 build:
 	go build -o $(APP) .
@@ -10,3 +10,7 @@ build-pi:
 
 run:
 	go run .
+
+test:
+	go test ./...
+	./tests/install_browserpad_override_test.sh
