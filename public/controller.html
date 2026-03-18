@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>RetroPie Browser Controller</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --panel: rgba(255, 255, 255, 0.08);
+      --panel-strong: rgba(255, 255, 255, 0.14);
+      --border: rgba(255, 255, 255, 0.2);
+      --active: #0fdd92;
+      --text: #f6f6f8;
+      --muted: rgba(246, 246, 248, 0.6);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: none;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top, rgba(15, 221, 146, 0.18), transparent 35%),
+        radial-gradient(circle at bottom right, rgba(77, 108, 250, 0.16), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+
+    .controller {
+      width: min(100vw, 1024px);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .badge,
+    .shoulder-bar,
+    .menu-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .shoulder-bar {
+      grid-column: 1 / 4;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .badge {
+      grid-column: 2;
+    }
+
+    .menu-row {
+      grid-column: 2;
+      gap: 14px;
+    }
+
+    .cluster {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .dpad {
+      position: relative;
+      width: min(38vw, 320px);
+      aspect-ratio: 1;
+      margin-left: 8px;
+    }
+
+    .diamond {
+      position: relative;
+      width: min(34vw, 280px);
+      aspect-ratio: 1;
+      margin-right: 8px;
+    }
+
+    .btn,
+    .badge-pill {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      color: var(--text);
+      transition: transform 80ms ease, background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
+      box-shadow: 0 14px 35px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .btn.active {
+      transform: scale(1.07);
+      background: rgba(15, 221, 146, 0.22);
+      border-color: rgba(15, 221, 146, 0.8);
+      box-shadow: 0 16px 40px rgba(15, 221, 146, 0.22);
+    }
+
+    .shoulder {
+      width: 112px;
+      height: 56px;
+      border-radius: 999px;
+      font-size: 1rem;
+    }
+
+    .menu {
+      min-width: 110px;
+      height: 50px;
+      padding: 0 20px;
+      border-radius: 999px;
+      font-size: 0.92rem;
+    }
+
+    .badge-pill {
+      min-width: 142px;
+      padding: 10px 20px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-size: 0.9rem;
+      letter-spacing: 0.04em;
+    }
+
+    .dpad .btn,
+    .diamond .btn {
+      position: absolute;
+      width: 40%;
+      height: 40%;
+      border-radius: 28px;
+      font-size: clamp(1rem, 3vw, 1.4rem);
+    }
+
+    .dpad .center {
+      position: absolute;
+      inset: 30%;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    [data-button="up"] { top: 0; left: 30%; }
+    [data-button="down"] { bottom: 0; left: 30%; }
+    [data-button="left"] { left: 0; top: 30%; }
+    [data-button="right"] { right: 0; top: 30%; }
+
+    [data-button="y"] { top: 0; left: 30%; }
+    [data-button="a"] { bottom: 0; left: 30%; }
+    [data-button="x"] { left: 0; top: 30%; }
+    [data-button="b"] { right: 0; top: 30%; }
+
+    .status {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.28);
+      color: var(--muted);
+      font-size: 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    @media (orientation: portrait) {
+      .controller {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto auto;
+        justify-items: center;
+      }
+
+      .shoulder-bar,
+      .badge,
+      .menu-row {
+        grid-column: 1;
+      }
+
+      .dpad,
+      .diamond {
+        width: min(58vw, 280px);
+        margin: 0;
+      }
+
+      .hint::after {
+        content: " Rotate to landscape for the best layout.";
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">Connecting…</div>
+  <main class="controller">
+    <div class="shoulder-bar">
+      <button class="btn shoulder" data-button="lb">LB</button>
+      <div class="badge"><div class="badge-pill" id="playerBadge">Waiting…</div></div>
+      <button class="btn shoulder" data-button="rb">RB</button>
+    </div>
+
+    <section class="cluster">
+      <div class="dpad">
+        <div class="center"></div>
+        <button class="btn" data-button="up">Up</button>
+        <button class="btn" data-button="down">Down</button>
+        <button class="btn" data-button="left">Left</button>
+        <button class="btn" data-button="right">Right</button>
+      </div>
+    </section>
+
+    <section class="menu-row">
+      <button class="btn menu" data-button="select">Select</button>
+      <button class="btn menu" data-button="start">Start</button>
+    </section>
+
+    <section class="cluster">
+      <div class="diamond">
+        <button class="btn" data-button="y">Y</button>
+        <button class="btn" data-button="a">A</button>
+        <button class="btn" data-button="x">X</button>
+        <button class="btn" data-button="b">B</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="hint">Browser controller active.</div>
+
+  <script>
+    const state = {
+      a: false,
+      b: false,
+      x: false,
+      y: false,
+      lb: false,
+      rb: false,
+      start: false,
+      select: false,
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+    };
+
+    const statusEl = document.getElementById("status");
+    const playerBadgeEl = document.getElementById("playerBadge");
+    const token = window.location.pathname.split("/").pop();
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+    const activePointers = new Map();
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function sendMessage(message) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(message));
+      }
+    }
+
+    function sendState() {
+      sendMessage({ type: "input", buttons: state });
+    }
+
+    function setButtonState(button, active) {
+      if (state[button] === active) {
+        return;
+      }
+      state[button] = active;
+      const node = document.querySelector(`[data-button="${button}"]`);
+      if (node) {
+        node.classList.toggle("active", active);
+      }
+      sendState();
+    }
+
+    function releaseAll() {
+      for (const key of Object.keys(state)) {
+        state[key] = false;
+      }
+      document.querySelectorAll(".btn.active").forEach((node) => node.classList.remove("active"));
+      sendState();
+      sendMessage({ type: "release_all" });
+    }
+
+    function bindButton(node) {
+      const button = node.dataset.button;
+
+      node.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        node.setPointerCapture(event.pointerId);
+        activePointers.set(event.pointerId, button);
+        setButtonState(button, true);
+      });
+
+      const clear = (event) => {
+        if (activePointers.get(event.pointerId) !== button) {
+          return;
+        }
+        activePointers.delete(event.pointerId);
+
+        const stillPressed = [...activePointers.values()].includes(button);
+        setButtonState(button, stillPressed);
+      };
+
+      node.addEventListener("pointerup", clear);
+      node.addEventListener("pointercancel", clear);
+      node.addEventListener("lostpointercapture", clear);
+    }
+
+    document.querySelectorAll("[data-button]").forEach(bindButton);
+
+    socket.addEventListener("open", () => {
+      setStatus("Connected");
+      sendMessage({ type: "join", token });
+    });
+
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "joined") {
+        playerBadgeEl.textContent = `Player ${message.player}`;
+        setStatus("Ready");
+      } else if (message.type === "error") {
+        playerBadgeEl.textContent = "Join failed";
+        setStatus(message.message);
+      }
+    });
+
+    socket.addEventListener("close", () => {
+      setStatus("Disconnected");
+    });
+
+    socket.addEventListener("error", () => {
+      setStatus("Socket error");
+    });
+
+    const heartbeat = window.setInterval(() => {
+      sendMessage({ type: "heartbeat" });
+    }, 100);
+
+    window.addEventListener("pagehide", () => {
+      window.clearInterval(heartbeat);
+      releaseAll();
+      socket.close();
+    });
+  </script>
+</body>
+</html>
